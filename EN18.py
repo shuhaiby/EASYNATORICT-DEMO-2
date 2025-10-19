@@ -254,20 +254,56 @@ def show_celebration():
     st.markdown(emoji_html, unsafe_allow_html=True)
 
 # ==================== AI LAYER - DEEPSEEK INTEGRATION ====================
+import requests
+import json
+
 class DeepSeekAI:
     def __init__(self):
         try:
             self.api_key = st.secrets["DEEPSEEK_API_KEY"]
-            self.client = DeepSeekAI(
-                api_key=self.api_key,
-                base_url="https://api.deepseek.com",
-                timeout=30
-            )
+            self.base_url = "https://openrouter.ai/api/v1"  # ✅ OpenRouter endpoint
+            self.model = "deepseek/deepseek-chat"  # ✅ Model name di OpenRouter
             self.demo_mode = False
-            st.success("✅ AI Tutor Connected!")
+            st.success("✅ DeepSeek AI via OpenRouter Connected!")
         except Exception as e:
             self.demo_mode = True
-            st.warning("🔧 Demo Mode - Add DeepSeek API Key for full features")
+            st.warning("🔧 Demo Mode - Add OpenRouter API Key for full features")
+    
+    def _call_openrouter_api(self, messages, temperature=0.7, max_tokens=800):
+        """Call OpenRouter API untuk DeepSeek model"""
+        try:
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}",
+                "HTTP-Referer": "https://easynatorict-demo-2.streamlit.app",  # Required by OpenRouter
+                "X-Title": "EasyNatorics"  # Required by OpenRouter
+            }
+            
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": False
+            }
+            
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+            else:
+                st.error(f"OpenRouter API Error: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            st.error(f"API Call Failed: {e}")
+            return None
     
     def get_ai_explanation(self, concept, student_level, previous_answers=None):
         """Dapatkan penjelasan AI yang personalized"""
@@ -289,78 +325,21 @@ class DeepSeekAI:
                 7. Bahasa Indonesia yang friendly
                 """
                 
-                response = self.client.chat.completions.create(
-                    model="deepseek-chat",
-                    messages=[
-                        {"role": "system", "content": "Anda adalah tutor matematika yang sabar dan ahli menjelaskan konsep sulit dengan cara mudah."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.7,
-                    max_tokens=800
-                )
-                return response.choices[0].message.content
+                messages = [
+                    {"role": "system", "content": "Anda adalah tutor matematika yang sabar dan ahli menjelaskan konsep sulit dengan cara mudah."},
+                    {"role": "user", "content": prompt}
+                ]
+                
+                response = self._call_openrouter_api(messages, temperature=0.7, max_tokens=800)
+                
+                if response:
+                    return response
+                else:
+                    return self._get_demo_explanation(concept)
+                    
             except Exception as e:
+                st.error(f"AI Explanation Error: {e}")
                 return self._get_demo_explanation(concept)
-    
-    def _get_demo_explanation(self, concept):
-        """Fallback explanations for demo mode"""
-        explanations = {
-            "prinsip_perkalian": """
-            **🎯 PRINSIP PERKALIAN - Seni Menghitung Kemungkinan**
-            
-            **Konsep Inti:** Jika ada n₁ cara melakukan hal pertama, n₂ cara melakukan hal kedua, maka total cara = n₁ × n₂ × ...
-            
-            **🧠 Analogi Seru:**
-            Bayangkan kamu punya:
-            - 3 kaos (Merah, Biru, Hijau)
-            - 2 celana (Jeans, Cargo)
-            
-            Total outfit = 3 × 2 = **6 kombinasi**!
-            
-            **📊 Contoh Lain:**
-            - Menu: 4 makanan × 3 minuman = 12 kombinasi
-            - Password: 10 angka × 10 angka = 100 kombinasi
-            
-            **💡 Tips:** Kalau pilihan independen, selalu pakai perkalian!
-            """,
-            
-            "permutasi": """
-            **🔄 PERMUTASI - Seni Menyusun dengan Urutan**
-            
-            **Konsep Inti:** Menyusun objek dengan memperhatikan URUTAN (A-B-C ≠ C-B-A)
-            
-            **Formula:** P(n,r) = n! / (n-r)!
-            
-            **🎭 Contoh Seru:**
-            Mau menyusun 3 buku dari 5 buku berbeda?
-            P(5,3) = 5 × 4 × 3 = **60 susunan**!
-            
-            **📊 Real-World:**
-            - Podium juara: 8 peserta → P(8,3) = 336 susunan
-            - Password unik: 4 huruf berbeda → P(26,4) = 358,800
-            
-            **💡 Tips:** Urutan penting? Pakai permutasi!
-            """,
-            
-            "kombinasi": """
-            **👥 KOMBINASI - Power of Team Selection**
-            
-            **Konsep Inti:** Memilih objek TANPA memperhatikan urutan (A-B-C = C-B-A)
-            
-            **Formula:** C(n,r) = n! / (r!(n-r)!)
-            
-            **🤝 Contoh Seru:**
-            Memilih 2 orang dari 5 orang untuk tim?
-            C(5,2) = 10 tim berbeda!
-            
-            **📊 Real-World:**
-            - Komite: Pilih 3 dari 10 → C(10,3) = 120 komite
-            - Menu combo: Pilih 2 dari 6 → C(6,2) = 15 combo
-            
-            **💡 Tips:** Urutan tidak penting? Pakai kombinasi!
-            """
-        }
-        return explanations.get(concept, "Penjelasan lengkap tersedia dengan API key.")
     
     def ask_ai_tutor(self, user_question, context=""):
         """Fungsi untuk chat dengan AI tutor"""
@@ -385,33 +364,21 @@ class DeepSeekAI:
                 - Bahasa Indonesia friendly
                 """
                 
-                response = self.client.chat.completions.create(
-                    model="deepseek-chat",
-                    messages=[
-                        {"role": "system", "content": "Anda adalah tutor matematika yang sabar, ramah, dan ahli menjelaskan konsep sulit dengan cara mudah."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.7,
-                    max_tokens=600
-                )
-                return f"🤖 **AI Tutor:**\n\n{response.choices[0].message.content}"
+                messages = [
+                    {"role": "system", "content": "Anda adalah tutor matematika yang sabar, ramah, dan ahli menjelaskan konsep sulit dengan cara mudah."},
+                    {"role": "user", "content": prompt}
+                ]
+                
+                response = self._call_openrouter_api(messages, temperature=0.7, max_tokens=600)
+                
+                if response:
+                    return f"🤖 **AI Tutor:**\n\n{response}"
+                else:
+                    return self._get_demo_tutor_response(user_question)
+                    
             except Exception as e:
+                st.error(f"AI Tutor Error: {e}")
                 return self._get_demo_tutor_response(user_question)
-    
-    def _get_demo_tutor_response(self, question):
-        """Demo responses for tutor"""
-        demo_responses = {
-            "prinsip perkalian": "**Prinsip Perkalian** 🧮\n\nContoh: 3 baju × 2 celana = 6 outfit!\n\nSetiap pilihan independen dikalikan.",
-            "permutasi": "**Permutasi** 🔄\n\nUrutan penting! Contoh: P(5,3) = 5×4×3 = 60 susunan",
-            "kombinasi": "**Kombinasi** 👥\n\nUrutan tidak penting! Contoh: C(5,2) = 10 tim"
-        }
-        
-        question_lower = question.lower()
-        for topic, response in demo_responses.items():
-            if topic in question_lower:
-                return f"🤖 **AI Tutor (Demo):**\n\n{response}"
-        
-        return "🤖 **AI Tutor (Demo):**\n\nFitur lengkap tersedia dengan API key DeepSeek! Tanya tentang: Prinsip Perkalian, Permutasi, atau Kombinasi."
 
     def generate_adaptive_questions(self, concept, difficulty="medium", count=5, student_level="beginner"):
         """Generate unlimited adaptive questions using AI"""
@@ -421,98 +388,98 @@ class DeepSeekAI:
         
         try:
             prompt = f"""
-            Generate {count} {concept} practice problems for {student_level} level high school students.
-            Difficulty: {difficulty}
-            Language: Indonesian
-            Format: JSON with questions, options, answer, explanation, hint
-            Concepts: {concept}
+            Buat {count} soal latihan {concept} untuk siswa SMA level {student_level} dalam bahasa Indonesia.
+            Tingkat kesulitan: {difficulty}
             
-            Requirements:
-            - Real-world scenarios that students can relate to
-            - Multiple choice format with 4 options
-            - Clear step-by-step explanations
-            - Helpful hints
-            - Varying difficulty levels
-            - Return as JSON array
-            - Make it engaging and fun for teenagers
+            Format yang diharapkan: JSON array dengan field:
+            - question: teks soal
+            - options: array 4 pilihan [A, B, C, D]
+            - answer: jawaban benar
+            - explanation: penjelasan langkah demi langkah
+            - hint: petunjuk singkat
+            
+            Contoh format:
+            {{
+                "questions": [
+                    {{
+                        "question": "Ada 3 kaos dan 2 celana, berapa outfit berbeda?",
+                        "options": ["5", "6", "8", "10"],
+                        "answer": "6",
+                        "explanation": "Prinsip perkalian: 3 × 2 = 6 outfit",
+                        "hint": "Setiap kaos bisa dipasang dengan setiap celana"
+                    }}
+                ]
+            }}
+            
+            Buat soal yang:
+            - Kontekstual dengan kehidupan sehari-hari
+            - Menarik untuk remaja
+            - Tingkat kesulitan sesuai {difficulty}
+            - Bahasa Indonesia yang mudah dipahami
             """
             
-            response = self.client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[
-                    {"role": "system", "content": "You are a creative math teacher creating engaging practice problems. Always return valid JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.8,
-                response_format={"type": "json_object"},
-                max_tokens=2000
-            )
+            messages = [
+                {"role": "system", "content": "Kamu adalah guru matematika kreatif yang membuat soal latihan menarik. Selalu return JSON yang valid."},
+                {"role": "user", "content": prompt}
+            ]
             
-            result = json.loads(response.choices[0].message.content)
-            return result.get('questions', [])
+            response = self._call_openrouter_api(messages, temperature=0.8, max_tokens=2000)
             
+            if response:
+                try:
+                    # Clean the response
+                    cleaned_response = response.strip()
+                    if '```json' in cleaned_response:
+                        cleaned_response = cleaned_response.split('```json')[1].split('```')[0].strip()
+                    elif '```' in cleaned_response:
+                        cleaned_response = cleaned_response.split('```')[1].strip() if len(cleaned_response.split('```')) > 2 else cleaned_response
+                    
+                    result = json.loads(cleaned_response)
+                    return result.get('questions', [])
+                except json.JSONDecodeError as e:
+                    st.error(f"JSON Parse Error: {e}")
+                    st.info(f"Raw response: {response}")
+                    return self._get_demo_questions(concept, count)
+            else:
+                return self._get_demo_questions(concept, count)
+                
         except Exception as e:
+            st.error(f"Question Generation Error: {e}")
             return self._get_demo_questions(concept, count)
-    
+
+    # Keep the existing demo methods
+    def _get_demo_explanation(self, concept):
+        """Fallback explanations for demo mode"""
+        explanations = {
+            "prinsip_perkalian": """
+            **🎯 PRINSIP PERKALIAN - Seni Menghitung Kemungkinan**
+            
+            **Konsep Inti:** Jika ada n₁ cara melakukan hal pertama, n₂ cara melakukan hal kedua, maka total cara = n₁ × n₂ × ...
+            
+            **🧠 Analogi Seru:**
+            Bayangkan kamu punya:
+            - 3 kaos (Merah, Biru, Hijau)
+            - 2 celana (Jeans, Cargo)
+            
+            Total outfit = 3 × 2 = **6 kombinasi**!
+            
+            **📊 Contoh Lain:**
+            - Menu: 4 makanan × 3 minuman = 12 kombinasi
+            - Password: 10 angka × 10 angka = 100 kombinasi
+            
+            **💡 Tips:** Kalau pilihan independen, selalu pakai perkalian!
+            """,
+            # ... keep the rest of your demo explanations
+        }
+        return explanations.get(concept, "Penjelasan lengkap tersedia dengan API key.")
+
+    def _get_demo_tutor_response(self, question):
+        """Demo responses for tutor"""
+        # ... keep your existing demo tutor responses
+
     def _get_demo_questions(self, concept, count):
         """Fallback demo questions"""
-        question_banks = {
-            'prinsip_perkalian': [
-                {
-                    "question": "Kamu punya 3 kaos (Merah, Biru, Hijau) dan 2 celana (Jeans, Cargo). Berapa banyak outfit berbeda?",
-                    "options": ["5", "6", "8", "10"],
-                    "answer": "6",
-                    "explanation": "Prinsip perkalian: 3 kaos × 2 celana = 6 outfit berbeda",
-                    "hint": "Setiap kaos bisa dipasang dengan setiap celana"
-                },
-                {
-                    "question": "Password 2 digit menggunakan angka 0-9. Berapa banyak password yang mungkin?",
-                    "options": ["90", "100", "110", "120"],
-                    "answer": "100", 
-                    "explanation": "10 pilihan digit pertama × 10 pilihan digit kedua = 100 password",
-                    "hint": "Setiap digit punya 10 kemungkinan (0-9)"
-                }
-            ],
-            'permutasi': [
-                {
-                    "question": "Berapa banyak cara menyusun 4 buku berbeda di rak?",
-                    "options": ["16", "24", "32", "48"],
-                    "answer": "24",
-                    "explanation": "4! = 4 × 3 × 2 × 1 = 24 susunan berbeda",
-                    "hint": "Ini adalah permutasi dari 4 objek berbeda"
-                },
-                {
-                    "question": "Dalam lomba dengan 5 peserta, berapa banyak kemungkinan juara 1, 2, dan 3?",
-                    "options": ["60", "50", "40", "30"],
-                    "answer": "60",
-                    "explanation": "P(5,3) = 5 × 4 × 3 = 60 kemungkinan podium",
-                    "hint": "Urutan juara penting (juara 1 ≠ juara 2)"
-                }
-            ],
-            'kombinasi': [
-                {
-                    "question": "Dari 7 orang, berapa banyak cara memilih 3 orang untuk panitia?",
-                    "options": ["35", "30", "25", "20"],
-                    "answer": "35",
-                    "explanation": "C(7,3) = 7!/(3!×4!) = 35 cara",
-                    "hint": "Urutan pemilihan tidak penting"
-                },
-                {
-                    "question": "Dalam menu ada 8 hidangan. Berapa banyak cara memilih 3 hidangan?",
-                    "options": ["56", "48", "40", "32"],
-                    "answer": "56",
-                    "explanation": "C(8,3) = 8!/(3!×5!) = 56 kombinasi menu",
-                    "hint": "Urutan pemilihan hidangan tidak penting"
-                }
-            ]
-        }
-        
-        base_questions = question_banks.get(concept, [])
-        # Duplicate questions to reach count if needed
-        while len(base_questions) < count:
-            base_questions.extend(base_questions)
-        return base_questions[:count]
-
+        # ... keep your existing demo questions
 # ==================== SISTEM DATA PENELITIAN ====================
 class ResearchDataSystem:
     def __init__(self):
